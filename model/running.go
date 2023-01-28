@@ -8,6 +8,18 @@ import (
 	"strings"
 )
 
+type IRunningTaskDAO interface {
+	Put(ctx context.Context, taskName, node, shard string) error
+	Get(ctx context.Context, taskName, node, shard string) (string, error)
+	Delete(ctx context.Context, taskName, node, shard string) error
+	DeleteTaskNode(ctx context.Context, taskName, node string) error
+	DeleteTask(ctx context.Context, taskName string) error
+	DeleteAll(ctx context.Context) error
+	ListByTaskNode(ctx context.Context, taskName, node string) (Shards, error)
+	ListByTask(ctx context.Context, task string) ([]*NodeWithShards, error)
+	List(ctx context.Context) ([]*TaskWithNodesWithShards, error)
+}
+
 func NewRunningTaskDAO(client *clientv3.Client) *runningTaskDAO {
 	return &runningTaskDAO{
 		client: client,

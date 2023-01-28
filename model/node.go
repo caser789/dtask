@@ -5,12 +5,29 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/sirupsen/logrus"
+	"go.etcd.io/etcd/api/v3/mvccpb"
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"go.etcd.io/etcd/client/v3/concurrency"
 	"go.uber.org/zap"
 	"strings"
 	"time"
 )
+
+type ILeaderDataDAO interface {
+	Put(ctx context.Context, nodes Nodes) error
+	Get(ctx context.Context) (Nodes, error)
+}
+
+type ILeaderDAO interface {
+	Get(ctx context.Context) (string, error)
+	Campaign(parentCtx context.Context, node string)
+}
+
+type INodeDAO interface {
+	Register(ctx context.Context, addr string) (*etcdRegistry, error)
+	List(ctx context.Context) ([]string, error)
+	Watch(ctx context.Context) (<-chan []string, error)
+}
 
 func NewLeaderDataDAO(client *clientv3.Client) *leaderDataDAO {
 	return &leaderDataDAO{
@@ -170,6 +187,37 @@ func (n *nodeDAO) List(ctx context.Context) ([]string, error) {
 		servers = append(servers, sarray[len(sarray)-1])
 	}
 	return servers, nil
+}
+
+func (n *nodeDAO) Watch(ctx context.Context) (<-chan []string, error) {
+	rch := n.client.Watch(ctx, n.prefix)
+	res := make(chan []string)
+	go func() {
+		for {
+			select {
+			case resp, ok := <-rch:
+				if !ok {
+					rch = n.client.Watch(ctx, n.prefix)
+					logrus.Error("watch node rch closed")
+					continue
+				}
+
+				for _, ev := range resp.Events {
+					switch ev.Type {
+					case mvccpb.PUT, mvccpb.DELETE:
+						nodes, err := n.List(ctx)
+						if err != nil {
+							logrus.Error("watch node list node error")
+							continue
+						}
+						res <- nodes
+					}
+				}
+			}
+		}
+	}()
+
+	return res, nil
 }
 
 func KeepRegister(ctx context.Context, cli *clientv3.Client, key, value string) (*etcdRegistry, error) {

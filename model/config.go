@@ -9,6 +9,14 @@ import (
 	clientv3 "go.etcd.io/etcd/client/v3"
 )
 
+type ITaskConfigDAO interface {
+	Put(ctx context.Context, value *TaskConfig) error
+	Get(ctx context.Context, taskName string) (*TaskConfig, error)
+	List(ctx context.Context) ([]*TaskConfig, error)
+	Watch(ctx context.Context) (<-chan []*TaskConfig, error)
+	WatchTaskConfig(ctx context.Context, config *TaskConfig) (<-chan *TaskConfig, error)
+}
+
 func NewSystemConfigDAO(client *clientv3.Client) *systemConfigDAO {
 	return &systemConfigDAO{
 		client: client,
@@ -106,19 +114,9 @@ func (c *taskConfigDAO) List(ctx context.Context) ([]*TaskConfig, error) {
 
 type TaskConfigStore map[string]*TaskConfig
 
-func (c *taskConfigDAO) Watch(ctx context.Context) (<-chan TaskConfigStore, error) {
-	taskConfigList, err := c.List(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	store := make(TaskConfigStore)
-	for _, t := range taskConfigList {
-		store[t.Name] = t
-	}
-
+func (c *taskConfigDAO) Watch(ctx context.Context) (<-chan []*TaskConfig, error) {
 	rch := c.client.Watch(ctx, c.prefix, clientv3.WithPrefix())
-	res := make(chan TaskConfigStore)
+	res := make(chan []*TaskConfig)
 	go func() {
 		for {
 			select {
@@ -137,14 +135,13 @@ func (c *taskConfigDAO) Watch(ctx context.Context) (<-chan TaskConfigStore, erro
 					}
 
 					switch ev.Type {
-					case mvccpb.PUT:
-						store[taskConfig.Name] = taskConfig
-						res <- store
+					case mvccpb.PUT, mvccpb.DELETE:
+						taskConfigs, err := c.List(ctx)
+						if err != nil {
+							continue
+						}
+						res <- taskConfigs
 						logrus.WithField("value", taskConfig).Info("new task config put")
-					case mvccpb.DELETE:
-						delete(store, taskConfig.Name)
-						res <- store
-						logrus.WithField("value", taskConfig).Info("new task config delete")
 					}
 				}
 			}

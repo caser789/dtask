@@ -9,6 +9,18 @@ import (
 	"strings"
 )
 
+type IShardDAO interface {
+	Put(ctx context.Context, taskName, node string, shards Shards) error
+	Get(ctx context.Context, taskName, node string) (Shards, error)
+	GetByTask(ctx context.Context, taskName string) ([]*NodeWithShards, error)
+	GetAll(ctx context.Context) ([]*TaskWithNodesWithShards, error)
+	Delete(ctx context.Context, taskName, node string) error
+	DeleteTask(ctx context.Context, taskName string) error
+	DeleteAll(ctx context.Context) error
+	WatchShards(ctx context.Context, task, node string) (<-chan Shards, error)
+	WatchForNewTask(ctx context.Context) (<-chan TaskNodeShardStore, error)
+}
+
 func NewShardDAO(client *clientv3.Client) *shardDAO {
 	return &shardDAO{
 		client: client,
