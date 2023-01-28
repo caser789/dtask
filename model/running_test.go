@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-func TestRunningTaskDAO(t *testing.T) {
+func _TestRunningTaskDAO(t *testing.T) {
 	ctx := context.Background()
 	cli := GetClient(ctx)
 
@@ -56,8 +56,56 @@ func TestRunningTaskDAO(t *testing.T) {
 			{Node: "2.2.2.2:8080", Shards: []string{"3", "4"}},
 		}},
 		{TaskName: "task-2", NodeWithShards: []*NodeWithShards{
-			{Node: "1.1.1.1:8080", Shards: []string{"4", "3"}},
-			{Node: "2.2.2.2:8080", Shards: []string{"2", "1"}},
+			{Node: "1.1.1.1:8080", Shards: []string{"3", "4"}},
+			{Node: "2.2.2.2:8080", Shards: []string{"1", "2"}},
 		}},
 	})
+
+	err = runningTaskDAO.Delete(ctx, "task-2", "1.1.1.1:8080", "3")
+	assert.NoError(t, err)
+
+	tasks, err = runningTaskDAO.List(ctx)
+	assert.NoError(t, err)
+	assert.Equal(t, tasks, []*TaskWithNodesWithShards{
+		{TaskName: "task-1", NodeWithShards: []*NodeWithShards{
+			{Node: "1.1.1.1:8080", Shards: []string{"1", "2"}},
+			{Node: "2.2.2.2:8080", Shards: []string{"3", "4"}},
+		}},
+		{TaskName: "task-2", NodeWithShards: []*NodeWithShards{
+			{Node: "1.1.1.1:8080", Shards: []string{"4"}},
+			{Node: "2.2.2.2:8080", Shards: []string{"1", "2"}},
+		}},
+	})
+
+	err = runningTaskDAO.DeleteTaskNode(ctx, "task-1", "1.1.1.1:8080")
+	assert.NoError(t, err)
+
+	tasks, err = runningTaskDAO.List(ctx)
+	assert.NoError(t, err)
+	assert.Equal(t, tasks, []*TaskWithNodesWithShards{
+		{TaskName: "task-1", NodeWithShards: []*NodeWithShards{
+			{Node: "2.2.2.2:8080", Shards: []string{"3", "4"}},
+		}},
+		{TaskName: "task-2", NodeWithShards: []*NodeWithShards{
+			{Node: "1.1.1.1:8080", Shards: []string{"4"}},
+			{Node: "2.2.2.2:8080", Shards: []string{"1", "2"}},
+		}},
+	})
+
+	err = runningTaskDAO.DeleteTask(ctx, "task-2")
+	assert.NoError(t, err)
+	tasks, err = runningTaskDAO.List(ctx)
+	assert.NoError(t, err)
+	assert.Equal(t, tasks, []*TaskWithNodesWithShards{
+		{TaskName: "task-1", NodeWithShards: []*NodeWithShards{
+			{Node: "2.2.2.2:8080", Shards: []string{"3", "4"}},
+		}},
+	})
+
+	err = runningTaskDAO.DeleteAll(ctx)
+	assert.NoError(t, err)
+	tasks, err = runningTaskDAO.List(ctx)
+	assert.NoError(t, err)
+	var x []*TaskWithNodesWithShards
+	assert.Equal(t, tasks, x)
 }

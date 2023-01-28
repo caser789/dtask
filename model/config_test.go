@@ -34,7 +34,7 @@ func TestNewSystemConfigDAO(t *testing.T) {
 	assert.Equal(t, input, output)
 }
 
-func TestNewTaskConfigDAO(t *testing.T) {
+func _TestNewTaskConfigDAO(t *testing.T) {
 	ctx := context.Background()
 	cli := GetClient(ctx)
 

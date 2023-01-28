@@ -2,6 +2,7 @@ package model
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"strings"
@@ -39,6 +40,29 @@ func (c *runningTaskDAO) Get(ctx context.Context, taskName, node, shard string) 
 	return string(resp.Kvs[0].Value), nil
 }
 
+func (c *runningTaskDAO) Delete(ctx context.Context, taskName, node, shard string) error {
+	key := fmt.Sprintf("%s/%s/%s/%s", c.prefix, taskName, node, shard)
+	_, err := c.client.Delete(ctx, key)
+	return err
+}
+
+func (c *runningTaskDAO) DeleteTaskNode(ctx context.Context, taskName, node string) error {
+	key := fmt.Sprintf("%s/%s/%s", c.prefix, taskName, node)
+	_, err := c.client.Delete(ctx, key, clientv3.WithPrefix())
+	return err
+}
+
+func (c *runningTaskDAO) DeleteTask(ctx context.Context, taskName string) error {
+	key := fmt.Sprintf("%s/%s", c.prefix, taskName)
+	_, err := c.client.Delete(ctx, key, clientv3.WithPrefix())
+	return err
+}
+
+func (c *runningTaskDAO) DeleteAll(ctx context.Context) error {
+	_, err := c.client.Delete(ctx, c.prefix, clientv3.WithPrefix())
+	return err
+}
+
 func (c *runningTaskDAO) ListByTaskNode(ctx context.Context, taskName, node string) (Shards, error) {
 	key := fmt.Sprintf("%s/%s/%s/", c.prefix, taskName, node)
 	resp, err := c.client.Get(ctx, key, clientv3.WithPrefix())
@@ -55,6 +79,15 @@ func (c *runningTaskDAO) ListByTaskNode(ctx context.Context, taskName, node stri
 }
 
 type Shards []string
+
+func (s *Shards) Encode() string {
+	b, _ := json.Marshal(s)
+	return string(b)
+}
+
+func (s *Shards) Decode(value []byte) error {
+	return json.Unmarshal(value, s)
+}
 
 type NodeWithShards struct {
 	Node   string
@@ -96,7 +129,7 @@ func (c *runningTaskDAO) List(ctx context.Context) ([]*TaskWithNodesWithShards, 
 		return nil, err
 	}
 
-	var store = make(map[string]map[string]map[string]bool)
+	var store = make(map[string]map[string][]string)
 
 	// app / running / task / node / shard
 	for _, ev := range resp.Kvs {
@@ -106,23 +139,19 @@ func (c *runningTaskDAO) List(ctx context.Context) ([]*TaskWithNodesWithShards, 
 		shard := parts[4]
 		_, has := store[task]
 		if !has {
-			store[task] = make(map[string]map[string]bool)
+			store[task] = make(map[string][]string)
 		}
 		_, has = store[task][node]
 		if !has {
-			store[task][node] = make(map[string]bool)
+			store[task][node] = []string{}
 		}
-		store[task][node][shard] = true
+		store[task][node] = append(store[task][node], shard)
 	}
 	var res []*TaskWithNodesWithShards
 	for t, n := range store {
 		var nodesWithShards []*NodeWithShards
 		for u, v := range n {
-			var shards []string
-			for x, _ := range v {
-				shards = append(shards, x)
-			}
-			nodesWithShards = append(nodesWithShards, &NodeWithShards{Node: u, Shards: shards})
+			nodesWithShards = append(nodesWithShards, &NodeWithShards{Node: u, Shards: v})
 		}
 		res = append(res, &TaskWithNodesWithShards{TaskName: t, NodeWithShards: nodesWithShards})
 	}
