@@ -6,9 +6,25 @@ import (
 	"github.com/caser789/dtask/manager"
 	"github.com/caser789/dtask/model"
 	"github.com/sirupsen/logrus"
+	clientv3 "go.etcd.io/etcd/client/v3"
 	"sync"
 	"time"
 )
+
+type Runner interface {
+	Run(ctx context.Context) error
+}
+
+func NewLeaderProcessor(addr string, client *clientv3.Client) *leaderProcessor {
+	return &leaderProcessor{
+		addr:         addr,
+		nodeManager:  manager.NewNodeManager(addr, client),
+		taskManager:  manager.NewTaskManager(client),
+		shardManager: manager.NewShardManager(addr, client),
+		mutex:        sync.Mutex{},
+		closer:       make(chan interface{}),
+	}
+}
 
 type leaderProcessor struct {
 	nodeManager  manager.INodeManager
@@ -22,7 +38,7 @@ type leaderProcessor struct {
 	mutex   sync.Mutex
 }
 
-func (p *leaderProcessor) Run(ctx context.Context) {
+func (p *leaderProcessor) Run(ctx context.Context) error {
 	ticker := time.NewTicker(time.Second * 10)
 	defer ticker.Stop()
 	for {
@@ -30,7 +46,7 @@ func (p *leaderProcessor) Run(ctx context.Context) {
 		case <-ticker.C:
 			p.run(ctx)
 		case <-p.closer:
-			return
+			return nil
 		}
 	}
 }
@@ -68,6 +84,7 @@ func (p *leaderProcessor) startSubTask(ctx context.Context) {
 }
 
 func (p *leaderProcessor) shardTasks(ctx context.Context, nodes []string, taskConfigs []*model.TaskConfig) error {
+	logrus.WithField("node", p.addr).WithField("taskConfigs", taskConfigs).Info("sharding task")
 	for _, task := range taskConfigs {
 		err := p.shardTask(ctx, task, nodes)
 		if err != nil {
@@ -104,6 +121,7 @@ func (p *leaderProcessor) shardTask(ctx context.Context, config *model.TaskConfi
 	shardsByNode := shard(nodes, int(config.ShardNumber))
 
 	// save
+	logrus.WithField("node", p.addr).WithField("task", config.Name).WithField("shard by node", shardsByNode).Info("saving sharded tasks")
 	return p.shardManager.SaveTask(ctx, config.Name, shardsByNode)
 }
 
@@ -135,6 +153,7 @@ func (p *leaderProcessor) watchNodeChange(ctx context.Context) {
 		select {
 		case nodes := <-rch:
 			tasks, err := p.taskManager.GetAllTasks(ctx)
+			logrus.WithField("node", p.addr).Info("watch node change")
 			if err != nil {
 				continue
 			}
@@ -156,6 +175,7 @@ func (p *leaderProcessor) watchTaskChange(ctx context.Context) {
 	for {
 		select {
 		case taskConfigs := <-rch:
+			logrus.WithField("node", p.addr).Info("watch task change")
 			nodes, err := p.nodeManager.GetNodes(ctx)
 			if err != nil {
 				continue

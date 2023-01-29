@@ -14,7 +14,7 @@ type ITaskConfigDAO interface {
 	Get(ctx context.Context, taskName string) (*TaskConfig, error)
 	List(ctx context.Context) ([]*TaskConfig, error)
 	Watch(ctx context.Context) (<-chan []*TaskConfig, error)
-	WatchTaskConfig(ctx context.Context, config *TaskConfig) (<-chan *TaskConfig, error)
+	WatchTaskConfig(ctx context.Context, taskName string) (<-chan *TaskConfig, error)
 }
 
 func NewSystemConfigDAO(client *clientv3.Client) *systemConfigDAO {
@@ -151,16 +151,16 @@ func (c *taskConfigDAO) Watch(ctx context.Context) (<-chan []*TaskConfig, error)
 	return res, nil
 }
 
-func (c *taskConfigDAO) WatchTaskConfig(ctx context.Context, config *TaskConfig) (<-chan *TaskConfig, error) {
-	rch := c.client.Watch(ctx, c.getKey(config.Name))
+func (c *taskConfigDAO) WatchTaskConfig(ctx context.Context, taskName string) (<-chan *TaskConfig, error) {
+	rch := c.client.Watch(ctx, c.getKey(taskName))
 	res := make(chan *TaskConfig)
 	go func() {
 		for {
 			select {
 			case resp, ok := <-rch:
 				if !ok {
-					rch = c.client.Watch(ctx, c.getKey(config.Name))
-					logrus.WithField("task_name", config.Name).Error("rch closed")
+					rch = c.client.Watch(ctx, c.getKey(taskName))
+					logrus.WithField("task_name", taskName).Error("rch closed")
 					continue
 				}
 				for _, ev := range resp.Events {
